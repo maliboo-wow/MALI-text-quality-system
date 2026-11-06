@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Локальна база результатів (створюється автоматично під час роботи застосунку)
+*.db
+*.db-journal
+
+# Streamlit / логи
+.streamlit/secrets.toml
+app.log
+
+# Тимчасові файли Office та ОС
+~$*
+.DS_Store
+Thumbs.db

@@ -10,14 +10,20 @@ from stop_words import STOP_WORDS  # type: ignore
 
 # слова
 
+# апостроф усередині слова (об'єкт, п'ять) — частина слова, а не роздільник
+_APOSTROPHES = str.maketrans({"’": "'", "ʼ": "'", "`": "'"})
+_WORD_RE = re.compile(r"[а-яіїєґa-z0-9]+(?:'[а-яіїєґa-z0-9]+)*")
+_ALPHA_RE = re.compile(r"[а-яіїєґa-z]+(?:'[а-яіїєґa-z]+)*")
+
+
 def tokenize_words(text):
     """Розбиває текст на слова (з цифрами)."""
-    return re.findall(r'\b[а-яіїєґa-z0-9]+\b', text.lower())
+    return _WORD_RE.findall(text.lower().translate(_APOSTROPHES))
 
 
 def tokenize_words_alpha(text):
     """Розбиває текст на слова (тільки букви, без цифр)."""
-    return re.findall(r'\b[а-яіїєґa-z]+\b', text.lower())
+    return _ALPHA_RE.findall(text.lower().translate(_APOSTROPHES))
 
 
 def remove_stopwords(tokens):
