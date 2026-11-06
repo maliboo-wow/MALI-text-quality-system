@@ -17,8 +17,7 @@
 Додатково рахуємо кількість слів з GOOD_WORDS (як позитивний показник
 і показуємо у raw для інтерпретації).
 
-Слова шукаються з урахуванням словоформ (лематизація pymorphy3) і фраз —
-див. preprocessing/dictionary_index.py.
+Слова шукаються з урахуванням словоформ і фраз (preprocessing/dictionary_index.py).
 """
 import sys, os
 
@@ -30,7 +29,7 @@ from config import WATER  # type: ignore
 from preprocessing.cleaner import clean_for_metrics
 from preprocessing.tokenizer import tokenize_words
 from preprocessing.lemmatizer import lemmatize
-from preprocessing.dictionary_index import DictionaryIndex
+from preprocessing.dictionary_index import build_index, find_words
 
 # підключаємо dictionary/
 _DICT_PATH = os.path.abspath(os.path.join(_BASE, "..", "dictionary"))
@@ -44,15 +43,15 @@ from stop_words import STOP_WORDS  # type: ignore
 # категорії, які вважаємо «водою» (знижують якість тексту)
 WATER_CATEGORIES = ("filler", "noise", "repetition", "slang", "spam")
 
-# службові категорії шукаємо за точною формою слова, решту — за лемою
-EXACT_MATCH_CATEGORIES = {"filler", "noise", "repetition"}
+# ці категорії шукаємо за точною формою слова, решту — за лемою
+EXACT_CATEGORIES = ("filler", "noise", "repetition")
 
-# індекси будуються один раз при імпорті модуля
+# індекси словників (будуються один раз при імпорті)
 _BAD_INDEX = {
-    cat: DictionaryIndex(words, use_lemmas=cat not in EXACT_MATCH_CATEGORIES)
+    cat: build_index(words, use_lemmas=cat not in EXACT_CATEGORIES)
     for cat, words in BAD_CATEGORIES.items()
 }
-_GOOD_INDEX = {cat: DictionaryIndex(words) for cat, words in GOOD_CATEGORIES.items()}
+_GOOD_INDEX = {cat: build_index(words) for cat, words in GOOD_CATEGORIES.items()}
 
 
 def compute(text: str) -> dict:
@@ -73,29 +72,28 @@ def compute(text: str) -> dict:
             },
         }
 
-    # леми рахуємо один раз для всього тексту
     lemmas = lemmatize(tokens)
 
     # рахунок за категоріями
     per_category = {}
     found_words = {}
     for cat in WATER_CATEGORIES:
-        found = _BAD_INDEX[cat].find(tokens, lemmas)
+        found = find_words(_BAD_INDEX[cat], tokens, lemmas)
         per_category[cat] = len(found)
         found_words[cat] = sorted(set(found))
 
     water_count = sum(per_category.values())
-    profanity_found = _BAD_INDEX["profanity"].find(tokens, lemmas)
-    profanity_count = len(profanity_found)
-    found_words["profanity"] = sorted(set(profanity_found))
+    profanity = find_words(_BAD_INDEX["profanity"], tokens, lemmas)
+    profanity_count = len(profanity)
+    found_words["profanity"] = sorted(set(profanity))
     stopword_count = sum(1 for t in tokens if t in STOP_WORDS)
 
-    # «Хороші» слова — за категоріями, із вагами рівнів
+    # «хороші» слова — за категоріями з вагами рівнів
     good_count = 0
     weighted_good = 0.0
     good_per_category = {}
     for cat, index in _GOOD_INDEX.items():
-        cnt = index.count(tokens, lemmas)
+        cnt = len(find_words(index, tokens, lemmas))
         good_per_category[cat] = cnt
         good_count += cnt
         weighted_good += cnt * LEVEL_WEIGHTS.get(cat, 1.0)
@@ -143,6 +141,6 @@ def compute(text: str) -> dict:
             "good_bonus": round(bonus, 3),
             "per_category": per_category,
             "good_per_category": good_per_category,
-            "found_words": found_words,   # які саме «погані» слова знайдено
+            "found_words": found_words,
         },
     }

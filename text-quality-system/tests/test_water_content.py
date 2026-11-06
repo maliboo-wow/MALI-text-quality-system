@@ -1,13 +1,23 @@
-"""Перевірки метрики «водності»: словоформи, фрази, точний збіг для паразитів."""
-import os
-import sys
+"""
+Тести метрики «водності».
 
-BASE = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-sys.path.insert(0, BASE)
+Перевіряє:
+- апостроф не розриває слово;
+- словоформи «хороших» слів знаходяться через лематизацію;
+- слова-паразити рахуються лише за точною формою;
+- фрази рахуються один раз;
+- наказові форми в спамі шукаються точно;
+- нейтральні слова не вважаються «водою».
+"""
+import sys, os
 
-from metrics.water_content import compute  # noqa: E402
-from preprocessing.lemmatizer import is_available  # noqa: E402
-from preprocessing.tokenizer import tokenize_words  # noqa: E402
+_BASE = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if _BASE not in sys.path:
+    sys.path.insert(0, _BASE)
+
+from metrics.water_content import compute
+from preprocessing.lemmatizer import is_available
+from preprocessing.tokenizer import tokenize_words
 
 
 def test_apostrophe_is_part_of_word():
@@ -15,8 +25,9 @@ def test_apostrophe_is_part_of_word():
 
 
 def test_inflected_good_words_are_found():
+    # без pymorphy3 словоформи не розпізнаються — це очікувано
     if not is_available():
-        return  # без pymorphy3 словоформи не розпізнаються — це очікувано
+        return
     raw = compute("Аналітичну роботу провели науковці з експериментальної лабораторії.")["raw"]
     assert raw["good_count"] >= 3
 
