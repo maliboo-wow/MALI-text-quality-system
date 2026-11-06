@@ -1,35 +1,34 @@
 """
-Перевірки цілісності словників:
-    - жодна лема не повторюється між категоріями;
-    - «хороші» і «погані» слова не перетинаються;
-    - загальний розмір словника — не менше 5000 унікальних лем.
+Тести словників.
 
-Запуск (з папки text-quality-system):  python -m pytest
+Перевіряє:
+- жодна лема не повторюється в кількох категоріях;
+- «хороші» і «погані» слова не перетинаються;
+- у словниках не менше 5000 унікальних лем;
+- усі записи — непорожні рядки в нижньому регістрі.
+
+Запуск (з папки text-quality-system): python -m pytest
 """
-import os
-import sys
+import sys, os
 from collections import defaultdict
 
-BASE = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-sys.path.insert(0, BASE)
-sys.path.insert(0, os.path.join(BASE, "..", "dictionary"))
+_BASE = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if _BASE not in sys.path:
+    sys.path.insert(0, _BASE)
 
-from bad_words import BAD_CATEGORIES  # type: ignore  # noqa: E402
-from good_words import GOOD_CATEGORIES  # type: ignore  # noqa: E402
-from metrics.water_content import _BAD_INDEX, _GOOD_INDEX  # noqa: E402
-
-
-def _keys(index):
-    """Усі ключі індексу: леми, точні форми та фрази."""
-    return index.words | index.exact | {" ".join(p) for p in index.phrases}
+from preprocessing.dictionary_index import all_keys
+from metrics.water_content import _BAD_INDEX, _GOOD_INDEX, BAD_CATEGORIES, GOOD_CATEGORIES
 
 
 def _owners():
+    """{ключ: [категорії, де він зустрічається]}"""
     owners = defaultdict(list)
-    for prefix, indexes in (("good", _GOOD_INDEX), ("bad", _BAD_INDEX)):
-        for cat, index in indexes.items():
-            for k in _keys(index):
-                owners[k].append(f"{prefix}.{cat}")
+    for cat, index in _GOOD_INDEX.items():
+        for key in all_keys(index):
+            owners[key].append("good." + cat)
+    for cat, index in _BAD_INDEX.items():
+        for key in all_keys(index):
+            owners[key].append("bad." + cat)
     return owners
 
 
@@ -39,8 +38,8 @@ def test_no_lemma_in_two_categories():
 
 
 def test_good_and_bad_do_not_overlap():
-    good = set().union(*(_keys(i) for i in _GOOD_INDEX.values()))
-    bad = set().union(*(_keys(i) for i in _BAD_INDEX.values()))
+    good = set().union(*(all_keys(i) for i in _GOOD_INDEX.values()))
+    bad = set().union(*(all_keys(i) for i in _BAD_INDEX.values()))
     assert not good & bad, f"Слова одночасно хороші й погані: {sorted(good & bad)[:20]}"
 
 
@@ -48,8 +47,8 @@ def test_dictionary_size():
     assert len(_owners()) >= 5000
 
 
-def test_entries_are_lowercase_strings():
-    for cats in (GOOD_CATEGORIES, BAD_CATEGORIES):
-        for cat, words in cats.items():
-            bad = [w for w in words if not isinstance(w, str) or w != w.lower() or not w.strip()]
-            assert not bad, f"{cat}: некоректні записи {bad[:10]}"
+def test_entries_are_lowercase():
+    for categories in (GOOD_CATEGORIES, BAD_CATEGORIES):
+        for cat, words in categories.items():
+            wrong = [w for w in words if not w.strip() or w != w.lower()]
+            assert not wrong, f"{cat}: некоректні записи {wrong[:10]}"

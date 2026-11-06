@@ -11,3 +11,5 @@ from .tokenizer import (
     get_hapax_legomena,
     count_syllables_uk,
 )
+from .lemmatizer import lemma, lemmatize, is_available
+from .dictionary_index import build_index, find_words, all_keys
