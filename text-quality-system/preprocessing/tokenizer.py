@@ -11,13 +11,15 @@ from stop_words import STOP_WORDS  # type: ignore
 # слова
 
 def tokenize_words(text):
-    """Розбиває текст на слова (з цифрами)."""
-    return re.findall(r'\b[а-яіїєґa-z0-9]+\b', text.lower())
+    """Розбиває текст на слова (з цифрами). Апостроф усередині слова не розриває його."""
+    text = _normalize_apostrophes(text.lower())
+    return re.findall(r"[а-яіїєґa-z0-9]+(?:'[а-яіїєґa-z0-9]+)*", text)
 
 
 def tokenize_words_alpha(text):
     """Розбиває текст на слова (тільки букви, без цифр)."""
-    return re.findall(r'\b[а-яіїєґa-z]+\b', text.lower())
+    text = _normalize_apostrophes(text.lower())
+    return re.findall(r"[а-яіїєґa-z]+(?:'[а-яіїєґa-z]+)*", text)
 
 
 def remove_stopwords(tokens):
@@ -62,3 +64,8 @@ def get_hapax_legomena(tokens):
     """Слова що зустрічаються рівно 1 раз — показник багатства лексики."""
     counts = Counter(tokens)
     return [word for word, freq in counts.items() if freq == 1]
+
+
+def _normalize_apostrophes(text):
+    """Зводить різні апострофи (’ ʼ `) до звичайного '."""
+    return text.replace("’", "'").replace("ʼ", "'").replace("`", "'")

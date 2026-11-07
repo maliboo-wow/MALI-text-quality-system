@@ -10,15 +10,16 @@
     water_ratio = count(filler + noise + repetition + slang + spam) / total_words
 
 Бал (score ∈ [0, 1]):
-- 1.0, якщо water_ratio <= WATER["ideal_max_ratio"] (0.15);
-- 0.0, якщо water_ratio >= WATER["poor_ratio"] (0.40);
+- 1.0, якщо water_ratio <= WATER["ideal_max_ratio"] (0.03);
+- 0.0, якщо water_ratio >= WATER["poor_ratio"] (0.20);
 - лінійно між ними.
 
 Додатково рахуємо кількість слів з GOOD_WORDS (як позитивний показник
 і показуємо у raw для інтерпретації).
+
+Слова шукаються з урахуванням словоформ і фраз (preprocessing/dictionary_index.py).
 """
 import sys, os
-from collections import Counter
 
 _BASE = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if _BASE not in sys.path:
@@ -26,30 +27,31 @@ if _BASE not in sys.path:
 
 from config import WATER  # type: ignore
 from preprocessing.cleaner import clean_for_metrics
-from preprocessing.tokenizer import tokenize_words_alpha, tokenize_words
+from preprocessing.tokenizer import tokenize_words
+from preprocessing.lemmatizer import lemmatize
+from preprocessing.dictionary_index import build_index, find_words
 
 # підключаємо dictionary/
 _DICT_PATH = os.path.abspath(os.path.join(_BASE, "..", "dictionary"))
 if _DICT_PATH not in sys.path:
     sys.path.insert(0, _DICT_PATH)
 from bad_words import BAD_CATEGORIES  # type: ignore
-from good_words import GOOD_WORDS, GOOD_CATEGORIES, LEVEL_WEIGHTS  # type: ignore
+from good_words import GOOD_CATEGORIES, LEVEL_WEIGHTS  # type: ignore
 from stop_words import STOP_WORDS  # type: ignore
 
 
 # категорії, які вважаємо «водою» (знижують якість тексту)
 WATER_CATEGORIES = ("filler", "noise", "repetition", "slang", "spam")
 
+# ці категорії шукаємо за точною формою слова, решту — за лемою
+EXACT_CATEGORIES = ("filler", "noise", "repetition")
 
-def _build_water_set():
-    s = set()
-    for cat in WATER_CATEGORIES:
-        s |= BAD_CATEGORIES.get(cat, set())
-    return s
-
-
-_WATER_WORDS = _build_water_set()
-_PROFANITY = BAD_CATEGORIES.get("profanity", set())
+# індекси словників (будуються один раз при імпорті)
+_BAD_INDEX = {
+    cat: build_index(words, use_lemmas=cat not in EXACT_CATEGORIES)
+    for cat, words in BAD_CATEGORIES.items()
+}
+_GOOD_INDEX = {cat: build_index(words) for cat, words in GOOD_CATEGORIES.items()}
 
 
 def compute(text: str) -> dict:
@@ -70,33 +72,36 @@ def compute(text: str) -> dict:
             },
         }
 
-    # рахунок за категоріями
-    counter = Counter(tokens)
+    lemmas = lemmatize(tokens)
 
+    # рахунок за категоріями
     per_category = {}
+    found_words = {}
     for cat in WATER_CATEGORIES:
-        words = BAD_CATEGORIES.get(cat, set())
-        cnt = sum(counter[w] for w in words if w in counter)
-        per_category[cat] = cnt
+        found = find_words(_BAD_INDEX[cat], tokens, lemmas)
+        per_category[cat] = len(found)
+        found_words[cat] = sorted(set(found))
 
     water_count = sum(per_category.values())
-    profanity_count = sum(counter[w] for w in _PROFANITY if w in counter)
-    stopword_count = sum(counter[w] for w in STOP_WORDS if w in counter)
+    profanity = find_words(_BAD_INDEX["profanity"], tokens, lemmas)
+    profanity_count = len(profanity)
+    found_words["profanity"] = sorted(set(profanity))
+    stopword_count = sum(1 for t in tokens if t in STOP_WORDS)
 
-    # кількість «хороших» слів
-    good_count = sum(counter[w] for w in GOOD_WORDS if w in counter)
+    # «хороші» слова — за категоріями з вагами рівнів
+    good_count = 0
+    weighted_good = 0.0
+    good_per_category = {}
+    for cat, index in _GOOD_INDEX.items():
+        cnt = len(find_words(index, tokens, lemmas))
+        good_per_category[cat] = cnt
+        good_count += cnt
+        weighted_good += cnt * LEVEL_WEIGHTS.get(cat, 1.0)
 
     # Ratios
     water_ratio = water_count / n_tokens
     stopword_ratio = stopword_count / n_tokens
     good_ratio = good_count / n_tokens
-
-    # «Хороший» зважений скор — за категоріями з good_words з вагами
-    weighted_good = 0.0
-    for cat, words in GOOD_CATEGORIES.items():
-        w_cat = LEVEL_WEIGHTS.get(cat, 1.0)
-        cnt = sum(counter[w] for w in words if w in counter)
-        weighted_good += cnt * w_cat
     # нормуємо на кількість слів
     good_weighted_ratio = weighted_good / n_tokens
 
@@ -135,5 +140,7 @@ def compute(text: str) -> dict:
             "water_score": round(water_score, 3),
             "good_bonus": round(bonus, 3),
             "per_category": per_category,
+            "good_per_category": good_per_category,
+            "found_words": found_words,
         },
     }
